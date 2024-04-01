@@ -1,0 +1,178 @@
+---
+title: "Pulpo_Ogive"
+author: "Mauricio Mardones I."
+date:  "`r format(Sys.time(), '%d %B, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(lubridate)
+library("FSA")
+library("tidyverse")
+library("lubridate")
+library("magrittr")
+library("car")
+library(sizeMat)
+```
+
+
+```{r}
+pulpo <- read_excel("Base de datos muestreos biológicos Octopus vulgaris.xlsx")
+```
+
+```{r}
+head(pulpo)
+names(pulpo)
+```
+Cambio el formato de fechas
+
+
+```{r}
+pulpo <- pulpo %>%
+  mutate(
+    DIA = day(pulpo$`Fecha pesca`),
+    MES = month(pulpo$`Fecha pesca`),
+    ANO = year(pulpo$`Fecha pesca`)
+  )
+head(pulpo)
+
+pulpo1 <- pulpo %>% 
+  mutate(lcat2=lencat(pulpo$`Peso (gr)`, w=100)) # el argumento w indica el ancho del intervalo en este caso es de 2 cm
+
+headtail(pulpo1)
+
+freq <- xtabs(~lcat2+pulpo1$`Maduro/inmaduro`, data = pulpo1)
+
+freq
+
+props <- prop.table(freq, margin=1)
+
+round(props,3) #Redondea los resu
+
+props.df <- as.data.frame(props) 
+
+headtail(props.df)
+
+props.df <- props.df %>% 
+  filter(pulpo1..Maduro.inmaduro. == "Maduro")
+
+headtail(props.df)
+
+lcat1 <- as.numeric(levels(props.df$lcat2))
+
+props.df$lcat1 <- lcat1
+
+ggplot(props.df, aes(x = lcat2, y=Freq)) +
+  geom_point() +
+  labs(title = paste("Proporci?n de individuos aclanzando la madurez"), 
+       x = "Peso (gr)",
+       y = "Frecuencia") +
+  theme_bw()
+```
+
+
+
+
+```{r}
+glm1 <- glm(as.factor(pulpo$`Maduro/inmaduro`)~pulpo$`Peso (gr)`,
+            data=pulpo,family=binomial)
+coef(glm1)
+```
+
+```{r}
+summary(glm1)
+predict(glm1, data.frame(Longitud = c(32,42)), type = "response")
+```
+```{r}
+-(coef(glm1)[1]/coef(glm1)[2])
+
+fitPlot(glm1,xlab="Total Length (cm)",ylab="Proportion Mature",main="",xlim=c(25,70),
+         plot.p=FALSE)
+lines(c(0,L50),c(0.5,0.5),lty=3,lwd=2,col="blue")
+lines(c(L50,L50),c(-0.2,0.5),lty=3,lwd=2,col="blue")
+```
+```{r}
+binomial_smooth <- function(...) {
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), ...)
+}
+
+ggplot(pulpo, aes(pulpo$`Peso (gr)`, 
+                  as.numeric(pulpo$`Maduro/inmaduro`)-1)) +
+  binomial_smooth() +
+  geom_point(position=position_jitter(height=0.03, width=0)) +
+  geom_point(data = props.df,aes(x = lcat1, y=Freq), size = 2, shape = 3, color = "darkgreen") +
+  xlab("Longitud (cm)")+
+  ylab("Probabilidad de individuo maduro") +
+  geom_segment(aes(x = L50, y = 0, xend = L50, yend = 0.5), color = "darkred") +
+  geom_segment(aes(x = min(df$Longitud), y = 0.5, xend = L50, yend = 0.5), color = "darkred") +
+  theme_bw()
+```
+
+```{r}
+my_ogive_fq = gonad_mature(pulpo, varNames = c("Peso (gr)", "Madurez nueva"),
+                           inmName = c("1","2a", "2b" ),
+                           matName = c("3a","3b"),
+                           method = "fq", 
+                           niter = 999)
+
+my_ogive_fq %>% print() 
+```
+```{r}
+my_ogive_fq$out %>% as_tibble() %>% 
+  ggplot(aes(x = x))+
+  geom_line(aes(y = fitted), col = "blue", linetype = "solid", size = 1.2)+
+  geom_line(aes(y = CIlower), col = "blue", linetype = 6, size = .8)+
+  geom_line(aes(y = CIupper), col = "blue", linetype = 6, size = .8)+
+  # modelr::geom_ref_line(h = 0.5, colour = "red", size = 1)+
+  theme_bw()+
+  theme(panel.grid = element_line(linetype = "dotted"),
+        axis.text = element_text(size = 11, color = "black"), 
+        axis.title = element_text(size = 12, color = "black"))+
+  coord_cartesian(xlim = c(10,18))+
+  labs(x = "Total length (cm)", y = "Proportion")+
+  geom_segment(aes(x = 10, xend = 13.4461 , y = 0.5, yend = .5), color ="red", size =1.2, linetype = "dashed")+
+  geom_segment(aes(x = 13.4461, xend = 13.4461 , y = 0, yend = .5), color ="red", size =1.2, linetype = "dashed") +
+  scale_x_continuous(expand = c(0,0), breaks = seq(11,19,2))+
+  scale_y_continuous(expand = c(0,0), breaks = seq(0.25,1,.25))+
+  geom_text(x = 11.2, y = 0.85, label = expression(L[50]~13.4))
+```
+
+# Codigo Nuevo de Cousteu
+
+
+```{r}
+library(readxl)
+install.packages("dplyr")
+install.packages("sizeMat")
+install.packages("FSA")
+
+library(sizeMat)
+library(FSA)
+
+data("matFish")
+pulpo <- read_excel("~/IEO/Varios/pulpo.xlsx")
+head(pulpo)
+
+
+
+my_ogive = gonad_mature(data = pulpo, 
+                        varNames = c("Peso (gr)", "Madurez nueva"), 
+                        inmName = c("1","2a"),
+                        matName = c("2b", "3a", "3b" ))
+my_ogive
+
+par(mfrow = c(2,2))
+plot(my_ogive, 
+     xlab = "Peso (gr)", 
+     ylab = "Proporción de maduros", 
+     col = c("blue", "red"))
+
+
+```
+
